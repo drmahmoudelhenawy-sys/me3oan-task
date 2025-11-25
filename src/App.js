@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   PenTool,
@@ -27,6 +27,11 @@ import {
   X,
   Briefcase,
   Users,
+  Bell,
+  LogOut,
+  Lock,
+  Mail,
+  ShieldCheck,
 } from "lucide-react";
 
 // ---------------------------------------------------------
@@ -45,6 +50,13 @@ import {
   orderBy,
   limit,
 } from "firebase/firestore";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from "firebase/auth";
 
 // ---------------------------------------------------------
 // 2. إعدادات الاتصال
@@ -61,6 +73,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 // ---------------------------------------------------------
 // 3. البيانات الثابتة
@@ -162,12 +175,284 @@ const PRIORITIES = {
   },
 };
 
+// ---------------------------------------------------------
+// المكون الرئيسي (Root Component)
+// ---------------------------------------------------------
 export default function Ma3wanTaskApp() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isCodeVerified, setIsCodeVerified] = useState(false);
+
+  // ✅ إصلاح المشكلة: تحميل Tailwind هنا لضمان عمله في كل الشاشات
+  useEffect(() => {
+    if (!document.getElementById("tailwind-script")) {
+      const script = document.createElement("script");
+      script.id = "tailwind-script";
+      script.src = "https://cdn.tailwindcss.com";
+      script.onload = () => {
+        if (window.tailwind) {
+          window.tailwind.config = {
+            darkMode: "class",
+            theme: {
+              extend: {
+                colors: {
+                  gray: { 750: "#2d3748", 850: "#1a202c", 950: "#0d1117" },
+                },
+              },
+            },
+          };
+        }
+      };
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+      if (!currentUser) {
+        setIsCodeVerified(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 text-gray-500 font-sans">
+        جاري التحميل...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  if (!isCodeVerified) {
+    return <SecretCodeScreen onSuccess={() => setIsCodeVerified(true)} />;
+  }
+
+  return <MainApp user={user} />;
+}
+
+// ---------------------------------------------------------
+// شاشة الكود السري
+// ---------------------------------------------------------
+function SecretCodeScreen({ onSuccess }) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (code === "Me3oan2026") {
+      onSuccess();
+    } else {
+      setError("الكود السري غير صحيح 🚫");
+      setCode("");
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
+
+  return (
+    <div
+      className="min-h-screen bg-gradient-to-br from-gray-900 to-indigo-950 flex items-center justify-center p-4 font-sans"
+      dir="rtl"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden relative">
+        <div className="h-2 w-full bg-indigo-500 absolute top-0"></div>
+        <div className="p-8 text-center">
+          <div className="mx-auto w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4 text-indigo-600">
+            <ShieldCheck size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800">تحقق أمني إضافي</h2>
+          <p className="text-gray-500 text-sm mt-2">
+            يرجى إدخال كود الوصول الخاص بالفريق
+          </p>
+
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <input
+                type="password"
+                className="w-full text-center text-lg tracking-widest px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition"
+                placeholder="أدخل الكود هنا"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            {error && (
+              <p className="text-red-500 text-sm font-bold animate-pulse">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 transition shadow-lg"
+            >
+              تحقق ودخول
+            </button>
+          </form>
+
+          <button
+            onClick={handleLogout}
+            className="mt-6 text-sm text-gray-400 hover:text-red-500 flex items-center justify-center gap-1 mx-auto transition"
+          >
+            <LogOut size={14} /> تسجيل خروج
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// شاشة تسجيل الدخول
+// ---------------------------------------------------------
+function AuthScreen() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/wrong-password"
+      ) {
+        setError("البريد الإلكتروني أو كلمة المرور غير صحيحة");
+      } else if (err.code === "auth/email-already-in-use") {
+        setError("هذا البريد مستخدم بالفعل");
+      } else if (err.code === "auth/weak-password") {
+        setError("كلمة المرور ضعيفة (يجب أن تكون 6 أحرف على الأقل)");
+      } else {
+        setError("حدث خطأ: " + err.message);
+      }
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div
+      className="min-h-screen bg-gradient-to-br from-indigo-900 to-purple-900 flex items-center justify-center p-4 font-sans"
+      dir="rtl"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="p-8 text-center bg-indigo-50">
+          <img
+            src="https://i.postimg.cc/prX6tLfC/mʿwan-task-lwj.png"
+            alt="logo"
+            className="w-20 h-20 mx-auto mb-4 bg-transparent p-1 object-contain filter brightness-0"
+          />
+          <h1 className="text-2xl font-bold text-indigo-900">معوان تاسك</h1>
+          <p className="text-gray-500 text-sm mt-2">
+            نظام إدارة المهام المركزي
+          </p>
+        </div>
+
+        <form onSubmit={handleAuth} className="p-8 space-y-5">
+          <h2 className="text-xl font-bold text-gray-800 text-center mb-4">
+            {isLogin ? "تسجيل الدخول" : "إنشاء حساب جديد"}
+          </h2>
+
+          {error && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2">
+              <AlertCircle size={16} /> {error}
+            </div>
+          )}
+
+          <div className="relative">
+            <Mail className="absolute top-3 right-3 text-gray-400" size={20} />
+            <input
+              type="email"
+              required
+              className="w-full pr-10 pl-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+              placeholder="البريد الإلكتروني"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="relative">
+            <Lock className="absolute top-3 right-3 text-gray-400" size={20} />
+            <input
+              type="password"
+              required
+              className="w-full pr-10 pl-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none transition"
+              placeholder="كلمة المرور"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-indigo-700 transition shadow-lg flex justify-center items-center gap-2"
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            ) : isLogin ? (
+              "دخول"
+            ) : (
+              "تسجيل"
+            )}
+          </button>
+
+          <div className="text-center pt-4 border-t border-gray-100">
+            <p className="text-sm text-gray-600">
+              {isLogin ? "ليس لديك حساب؟" : "لديك حساب بالفعل؟"}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError("");
+                }}
+                className="text-indigo-600 font-bold mr-1 hover:underline"
+              >
+                {isLogin ? "أنشئ حساباً الآن" : "سجل دخولك"}
+              </button>
+            </p>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// التطبيق الرئيسي
+// ---------------------------------------------------------
+function MainApp({ user }) {
   const [activeDeptId, setActiveDeptId] = useState("educational");
   const [tasks, setTasks] = useState([]);
   const [events, setEvents] = useState([]);
   const [managementMeeting, setManagementMeeting] = useState(null);
   const [showMeetingModal, setShowMeetingModal] = useState(false);
+
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifMenu, setShowNotifMenu] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const isFirstLoad = useRef(true);
 
   const [newTask, setNewTask] = useState({
     title: "",
@@ -202,41 +487,21 @@ export default function Ma3wanTaskApp() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // التحقق من كلمة سر المدير
   const checkAdminAccess = () => {
-    const password = prompt("أدخل رمز المدير:");
+    const password = prompt("أدخل رمز المدير للإجراءات الحساسة:");
     if (password === "1234566") {
       return true;
     } else {
-      showToast("كلمة المرور خاطئة", "error");
+      showToast("رمز المرور خاطئ", "error");
       return false;
     }
   };
 
-  useEffect(() => {
-    if (!document.getElementById("tailwind-script")) {
-      const script = document.createElement("script");
-      script.id = "tailwind-script";
-      script.src = "https://cdn.tailwindcss.com";
-      script.onload = () => {
-        if (window.tailwind) {
-          window.tailwind.config = {
-            darkMode: "class",
-            theme: {
-              extend: {
-                colors: {
-                  gray: { 750: "#2d3748", 850: "#1a202c", 950: "#0d1117" },
-                },
-              },
-            },
-          };
-        }
-      };
-      document.head.appendChild(script);
+  const handleLogout = async () => {
+    if (window.confirm("هل تريد تسجيل الخروج؟")) {
+      await signOut(auth);
     }
-    const savedMode = localStorage.getItem("darkMode") === "true";
-    setDarkMode(savedMode);
-  }, []);
+  };
 
   useEffect(() => {
     const deptQuotes = QUOTES[activeDeptId] || QUOTES["educational"];
@@ -267,6 +532,34 @@ export default function Ma3wanTaskApp() {
         }));
         data.sort((a, b) => b.createdAtTimestamp - a.createdAtTimestamp);
         setTasks(data);
+
+        if (!isFirstLoad.current) {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const newTask = change.doc.data();
+              const deptName = DEPARTMENTS.find(
+                (d) => d.id === newTask.sourceDept
+              )?.name;
+
+              const newNotif = {
+                id: change.doc.id,
+                text: `نشاط جديد في ${deptName}: ${newTask.title}`,
+                time: new Date().toLocaleTimeString("ar-EG", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                read: false,
+              };
+
+              setNotifications((prev) => [newNotif, ...prev]);
+              setUnreadCount((prev) => prev + 1);
+              showToast(`تنبيه جديد في ${deptName}`, "info");
+            }
+          });
+        } else {
+          isFirstLoad.current = false;
+        }
+
         setLoading(false);
       },
       (error) => console.error("Tasks Error:", error)
@@ -309,6 +602,13 @@ export default function Ma3wanTaskApp() {
   }, []);
 
   const activeDept = DEPARTMENTS.find((d) => d.id === activeDeptId);
+
+  const markNotificationsRead = () => {
+    setShowNotifMenu(!showNotifMenu);
+    if (!showNotifMenu) {
+      setUnreadCount(0);
+    }
+  };
 
   const handleSaveMeeting = async (e) => {
     e.preventDefault();
@@ -375,9 +675,11 @@ export default function Ma3wanTaskApp() {
         deadline: newTask.deadline,
         priority: newTask.priority,
         sourceDept: activeDeptId,
+        forwardedTo: null,
         status: "pending",
         createdAt: new Date().toLocaleDateString("ar-EG"),
         createdAtTimestamp: Date.now(),
+        createdBy: user.email,
       });
       setNewTask({ title: "", details: "", deadline: "", priority: "normal" });
       setEduData({
@@ -409,25 +711,23 @@ export default function Ma3wanTaskApp() {
     }
   };
 
-  // دالة التحويل الجديدة (إنشاء نسخة مستقلة)
   const forwardTask = async (originalTask, targetDeptId) => {
     try {
-      // 1. إنشاء نسخة جديدة في القسم المستهدف
       const newTaskData = {
         title: originalTask.title,
         details: originalTask.details,
         deadline: originalTask.deadline,
         priority: originalTask.priority,
-        sourceDept: targetDeptId, // تصبح ملكاً للقسم الجديد
-        forwardedFrom: activeDeptId, // علامة أنها واردة من القسم الحالي
-        status: "pending", // حالتها جديدة ومستقلة
+        sourceDept: targetDeptId,
+        forwardedFrom: activeDeptId,
+        status: "pending",
         createdAt: new Date().toLocaleDateString("ar-EG"),
         createdAtTimestamp: Date.now(),
+        createdBy: user.email,
       };
 
       await addDoc(collection(db, "tasks"), newTaskData);
 
-      // 2. تحديث المهمة الأصلية فقط لتوضيح أنها حولت
       const taskRef = doc(db, "tasks", originalTask.id);
       await updateDoc(taskRef, { forwardedTo: targetDeptId });
 
@@ -466,15 +766,9 @@ export default function Ma3wanTaskApp() {
     });
   };
 
-  // الفلاتر المعدلة
-  // 1. مهام القسم الأصيلة (التي أنشأها القسم ولم تأتِ من الخارج)
   const rawMyDeptTasks = tasks.filter(
     (t) => t.sourceDept === activeDeptId && !t.forwardedFrom
   );
-
-  // 2. المهام الواردة (التي sourceDept هو قسمي، ولكن forwardedFrom موجود)
-  // ملاحظة: بما أننا ننسخ المهمة ونجعل sourceDept هو القسم الحالي، فستظهر كأنها مهمة عادية
-  // لتمييزها، نستخدم حقل forwardedFrom
   const rawIncomingTasks = tasks.filter(
     (t) => t.sourceDept === activeDeptId && t.forwardedFrom
   );
@@ -512,7 +806,6 @@ export default function Ma3wanTaskApp() {
           </div>
         )}
 
-        {/* Meeting Modal */}
         {showMeetingModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
@@ -583,7 +876,7 @@ export default function Ma3wanTaskApp() {
               <img
                 src="https://i.postimg.cc/prX6tLfC/mʿwan-task-lwj.png"
                 alt="logo"
-                className="w-10 h-10 bg-white/10 rounded p-1"
+                className="w-10 h-10 bg-transparent p-1 rounded object-contain filter brightness-0 invert"
               />
               <div>
                 <h1 className="text-xl font-bold">معوان تاسك</h1>
@@ -592,7 +885,47 @@ export default function Ma3wanTaskApp() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 relative">
+              <div className="relative">
+                <button
+                  onClick={markNotificationsRead}
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition"
+                >
+                  <Bell size={18} />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-indigo-900"></span>
+                  )}
+                </button>
+                {showNotifMenu && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700 overflow-hidden z-50 max-h-64 overflow-y-auto custom-scrollbar">
+                    <div className="p-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                      <h4 className="text-xs font-bold text-gray-600 dark:text-gray-300">
+                        آخر النشاطات
+                      </h4>
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p className="p-4 text-xs text-center text-gray-400">
+                        لا توجد إشعارات جديدة
+                      </p>
+                    ) : (
+                      notifications.map((note, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 border-b dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        >
+                          <p className="text-xs text-gray-800 dark:text-gray-200 line-clamp-2">
+                            {note.text}
+                          </p>
+                          <p className="text-[10px] text-gray-400 mt-1 text-left">
+                            {note.time}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={openMeetingModal}
                 className="p-2 rounded-full bg-indigo-500/30 hover:bg-indigo-500/50 text-white transition border border-indigo-400/30"
@@ -606,6 +939,14 @@ export default function Ma3wanTaskApp() {
                 className="p-2 rounded-full bg-white/10 hover:bg-white/20"
               >
                 {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-full bg-red-500/30 hover:bg-red-500/50 text-white transition"
+                title="تسجيل الخروج"
+              >
+                <LogOut size={18} />
               </button>
             </div>
           </div>
@@ -1071,9 +1412,10 @@ function TaskCard({ task, isIncoming, onToggle, onDelete, onForward }) {
             <ArrowRightLeft size={10} /> وارد من {originalDept.name}
           </span>
         ) : (
-          task.forwardedTo && (
+          task.forwardedTo &&
+          targetDept && (
             <span className="text-[10px] bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-200 px-2 py-0.5 rounded-full flex items-center gap-1 border border-green-100 dark:border-green-900/50">
-              <ArrowUpRight size={10} /> تم التحويل لـ {targetDept?.name}
+              <ArrowUpRight size={10} /> تم التحويل لـ {targetDept.name}
             </span>
           )
         )}
@@ -1138,7 +1480,7 @@ function TaskCard({ task, isIncoming, onToggle, onDelete, onForward }) {
                     <button
                       key={dept.id}
                       onClick={() => {
-                        onForward(dept.id);
+                        onForward(task, dept.id);
                         setShowForwardMenu(false);
                       }}
                       className="w-full text-right px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-600 dark:text-gray-200 flex items-center gap-2"
